@@ -322,3 +322,233 @@ def thirtyNine : N := 39
 
 - Reducible (가약 可約): abbrev로 만든 것. 컴파일러가 필요할 때마다 즉시 본래 내용으로 펼쳐서 확인합니다. (**유연함**)
 - Semireducible (반가약): def로 만든 것. 특별한 요청이 없으면 본래 내용을 숨깁니다. (**성능** 및 깔끔한 오류 메시지 유지에 유리)
+
+
+## 1.4 Structures
+
+**구조체(structure)**
+
+- 여러 개의 독립적인 데이터를 하나의 새로운 타입으로 묶는 방법
+- 여러 값을 하나의 의미 있는 단위로 결합
+- 여러 값을 하나의 타입으로 묶는 타입을 product type
+
+```lean
+structure Point where
+  x: Float
+  y: Float
+
+
+def origin : Point := { x:= 0.0, y:= 0.0 }
+def origin2 := ({ x := 0.0, y := 0.0 } : Point)
+-- 중괄호 안에 타입 선언
+def origin3 := {x := 0.0, y:= 0.0 : Point}
+
+def origin := { x:= 0.0, y:= 0.0 } -- error
+```
+
+Lean은 구조체 정의 시 자동으로 accessor 함수를 생성
+
+```lean
+-- 동일
+#eval Point.x origin
+#eval origin.x 
+
+-- 동일
+#eval Point.y origin
+#eval origin.y
+```
+
+함수 선언
+
+```lean
+def addPoints (p1 : Point) (p2 : Point) : Point :=
+  { x := p1.x + p2.x, y := p1.y + p2.y }
+```
+
+### 1.4.1 구조체 갱신 Updating Structures
+
+기존 값을 기반으로 일부 필드를 변경한 새로운 값을 반환
+ 
+Lean은 기본적으로 모든 값이 immutable
+
+```lean 
+def zeroX (p: Point) : Point :=
+  { p with x := 0.0 }
+
+def fourAndThree : Point :=
+  { x := 4.3, y := 3.4 }
+
+#eval fourAndThree -- { x:= 4.3, y:= 3.4}
+#eval zeroX fourAndThree -- { x:= 0.0, y:= 3.4}
+#eval fourAndThree -- { x:= 4.3, y:= 3.4}
+```
+
+### 1.4.2 구조체 네임스페이스 Behind the Scenes
+
+구조체를 정의하면 namespace도 자동 생성
+
+```lean
+Point.x
+Point.y
+Point.mk
+```
+
+생성자 이름 변경을 위해서는 아래와 같이 선언
+
+```lean
+structure Point2 where
+  point ::
+  x: Float
+  y: Float
+
+#eval {x := 0.0, y := 0.0 : Point2}
+#eval Point2.point 0.0 0.0
+```
+
+메소드 방식으로도 사용 가능
+
+`TARGET.f ARG1 ARG2 ...` 일때 `TARGET`의 타입이 `T`라면 `T.f`라는 이름의 함수가 호출된다.
+
+`TARGET`은 함수의 **`T` 타입을 요구하는 가장 왼쪽 인자**로 전달
+
+```lean
+#eval "Hello, ".append "world!" -- "Hello, world!"
+
+-- String.append [String (Hello, )] [String (world!)]
+```
+
+구조체 네임스페이스 안에 함수 선언
+
+```lean
+def Point.modifyBoth (f: Float → Float) (p: Point) : Point :=
+  { x := f p.x, y := f p.y }
+
+#eval fourAndThree.modifyBoth Float.floor
+-- Point.modifyBoth [(f: Float → Float) (Float.floor)] [(p: Point) fourAndThree]
+```
+
+### 1.4.3 Exercises 
+
+Define a structure named RectangularPrism that contains the height, width, and depth of a rectangular prism, each as a Float.
+
+```lean
+structure RectangularPrism where
+  height: Float
+  width: Float
+  depth: Float
+```
+
+
+Define a function named volume : RectangularPrism → Float that computes the volume of a rectangular prism.
+
+```lean
+def RectangularPrism.volume (rp: RectangularPrism) : Float :=
+  rp.height * rp.width * rp.depth
+```
+
+Define a structure named Segment that represents a line segment by its endpoints, and define a function length : Segment → Float that computes the length of a line segment. Segment should have at most two fields.
+
+```lean
+structure Segment where
+  p1: Point
+  p2: Point
+
+def Segment.length (s: Segment) : Float :=
+  let dx := s.p2.x - s.p1.x
+  let dy := s.p2.y - s.p1.y
+  Float.sqrt (dx * dx + dy * dy)
+```
+
+Which names are introduced by the declaration of RectangularPrism?
+
+- mk
+- height
+- width
+- depth
+
+Which names are introduced by the following declarations of Hamster and Book? What are their types?
+
+```lean
+structure Hamster where
+  name : String
+  fluffy : Bool
+structure Book where
+  makeBook ::
+  title : String
+  author : String
+  price : Float
+```
+
+Hamster 
+
+- mk: String -> Bool -> Hamster
+- name: Hamster -> String
+- fluffy: Hamster -> Bool
+
+Book
+
+- makeBook: String -> String -> Float -> Book
+- title: Book -> String
+- author: Book -> String
+- price: Book -> Float
+
+
+## 1.5 데이터 타입과 패턴 Datatypes and Patterns
+
+**Sum type(합 타입)** 
+
+- 여러 선택지 중 하나를 가질 수 있는 데이터 타입
+
+- **도메인 개념(domain concepts)** 자연스럽게 표현
+
+```lean
+inductive User where
+  | owner
+  | editor
+  | viewer
+
+inductive Operator where
+  | addition
+  | subtraction
+  | multiplication
+  | division
+```
+
+- 재귀적인 sum type은 **inductive datatype(귀납적 데이터 타입)**
+- **임의 개수의 요소를 포함**할 수 있는 데이터
+- 이러한 타입들에 대해 **수학적 귀납법(mathematical induction)**을 사용하여 명제를 증명
+- inductive datatype은 **pattern matching(패턴 매칭)** 과 **재귀 함수(recursive functions)** 를 통해 사용(소비)
+
+```lean
+inductive MyList (α: Type) where
+  | nil: MyList α
+  | cons: α -> MyList α -> MyList α
+
+def xs : MyList Nat :=
+  MyList.cons 1 (MyList.cons 2 (MyList.cons 3 MyList.nil))
+```
+
+여러 내장 타입도 inductive datatype으로 정의되어 있음
+
+```lean 
+inductive Bool where
+  | false : Bool
+  | true : Bool
+```
+
+구조체(structure)의 constructor와 마찬가지로, inductive datatype의 constructor 역시 다른 데이터를 받아 저장하는 단순한 수단일 뿐 임의의 초기화 코드나 검증 코드를 넣는 장소가 아니다.
+
+inductive datatype은 여러 개의 constructor를 자기 타입 네임스페이스 내에 가진다. Bool의 경우 인자를 받지 않는 constructor `Bool.true`, `Bool.false`.
+
+Lean 표준 라이브러리에서는 true와 false가 이 namespace에서 재-export되어 `Bool.` 없이 사용 가능
+
+OOP 에서는 아래와 같이 사용 가능
+
+```csharp
+abstract class Bool {}
+sealed class True : Bool {}
+sealed class False : Bool {}
+```
+
+이 객체지향 예제에서는 True와 False가 모두 Bool보다 더 구체적인 타입이 된다.
+반면 Lean의 정의에서는 새로운 타입은 Bool 하나만 도입된다.

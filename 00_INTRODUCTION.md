@@ -35,7 +35,6 @@
   - `elan default stable`
   - `elan override set {version}`
   - `elan show`
-  - `elan update`
 - lake: cargo, make 또는 Gradle과 유사하게, Lean 패키지와 그 의존성(dependencies)을 빌드
   - `lake new {project}`
   - `lake build`
