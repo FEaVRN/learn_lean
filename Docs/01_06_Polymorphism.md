@@ -389,4 +389,308 @@ inductive Empty : Type where
 
 ### 1.6.4 Messages You May Meet
 
-<!-- TODO -->
+정의 가능한 모든 구조체나 귀납 타입이 Type이라는 타입을 가질 수 있는 것은 아님
+
+특히, 어떤 생성자가 임의의 타입을 인자로 받는다면, 그 귀납 타입은 다른 타입을 가져야 함
+
+```lean
+inductive MyType: Type where
+  | ctor: (α: Type) -> α -> MyType
+```
+
+```
+Invalid universe level in constructor `MyType.ctor`: Parameter `α` has type
+  Type
+at universe level
+  2
+which is not less than or equal to the inductive type's resulting universe level 
+  1
+```
+
+나중에 설명해준다고함...?
+
+```lean
+| ctor : (α : Type) → α → MyType
+```
+
+이 정의는 생성자 ctor가
+- 타입 α 하나를 받고
+- 그 타입의 값 하나를 받고
+- MyType을 만든다
+
+즉 MyType 안에 아무 타입이나 다 집어넣을 수 있게 하려는 것이다.
+
+하지만 Lean은 이 경우 MyType : Type처럼 낮은 universe에 그냥 둘 수 없다고 본다.
+그래서 에러가 난다.
+
+당장은, 타입을 생성자의 인자로 넣기보다는, 귀납 타입 전체의 인자로 만들도록 해 보라.
+
+```lean
+inductive MyType (α: Type): Type where
+  | ctor: (a: α) -> MyType α
+```
+
+---
+
+비슷하게, 어떤 생성자의 인자가 지금 정의하고 있는 데이터타입을 인자로 받는 **함수**  라면, 그 정의는 거부
+
+```lean
+inductive MyType : Type where
+  | ctor : (MyType → Int) → MyType
+--          ^^^^^^^^ 함수
+```
+
+```
+(kernel) arg #1 of 'MyType.ctor' has a non positive occurrence of the datatypes being declared
+```
+
+기술적인 이유 때문에, 이런 데이터타입들을 허용하면 Lean의 **내부 논리(internal logic)** 를 무너뜨릴 수 있게 될 수도 있다.
+
+그렇게 되면 Lean은 **정리 증명기(theorem prover)** 로 사용하기에 적합하지 않게 된다.
+
+---
+
+두 개의 매개변수를 받는 재귀 함수는 그 둘을 하나의 쌍(pair)으로 매칭하지 말고,
+각 매개변수에 대해 독립적으로 패턴 매칭해야 한다.
+
+그렇지 않으면 Lean에서 **재귀 호출이 더 작은 값에 대해 이루어지는지 검사** 하는 메커니즘이 입력 값과 재귀 호출에서 사용되는 인자 사이의 관계를 파악할 수 없게 된다.
+
+> Lean이 종료를 확인하는 원리는 [웰-파운디드 관계(Well-founded relation)](https://en.wikipedia.org/wiki/Well-founded_relation)$\prec$를 찾는 것
+
+```lean
+-- {α: Type} {β: Type} 안써도 알아서 컴파일러가 implicit argument로 인식해서 처리해줌
+def sameLength (xs: List α) (ys: List β): Bool :=
+  match (xs, ys) with
+  | ([], []) => true
+  | (x::xs', y::ys') => sameLength xs' ys'
+  | _ => false
+```
+
+```
+fail to show termination for
+  sameLength
+with errors
+failed to infer structural recursion:
+Not considering parameter α of sameLength:
+  it is unchanged in the recursive calls
+Not considering parameter β of sameLength:
+  it is unchanged in the recursive calls
+Cannot use parameter xs:
+  failed to eliminate recursive application <<<<<< 여기
+    sameLength xs' ys'
+Cannot use parameter ys:
+  failed to eliminate recursive application <<<<<< 여기
+    sameLength xs' ys'
+
+
+Could not find a decreasing measure. <<<<<<<<<<<<<< 여기
+The basic measures relate at each recursive call as follows:
+(<, ≤, =: relation proved, ? all proofs failed, _: no proof attempted)
+              xs ys
+1) 1816:28-46  ?  ?
+Please use `termination_by` to specify a decreasing measure.
+```
+
+**설명 1**
+
+1. (xs, ys)로 묶는 순간 Lean은 두 리스트를 개별적으로 추적하지 않고, 임시로 생성된 하나의 Prod 값으로 취급한다.
+2. 컴파일러는 이 임시 튜플이 '원래 함수의 인자'가 아니기 때문에, 여기서부터 시작되는 구조적 감소를 추적할 수 없다.
+3. 즉, "xs'가 튜플에서 분해되어 나온 건 알겠는데... 이게 원래 함수의 인자인 xs에서 바로 유래한 건지 확신할 수 없네?" 하고 연결 고리(Structural trace)를 놓쳐버린다.
+4. 그래서 match 분기에서 제공하는 정보만으로는 xs → xs' 같은 구조적 감소 관계를 직접 인식(증명)하지 못하고 에러를 발생시킨다.
+
+**설명 2**
+
+- Lean은 재귀 함수에서 재귀 호출 시 인자가 구조적으로 감소하는지 확인해야 한다.
+- sameLength : List α → List β → Bool 에서 termination checker는 다음 중 하나를 증명해야 한다.
+  - xs' < xs
+  - ys' < ys
+- match (xs, ys) 패턴에서는 (xs, ys)가 하나의 Prod 값으로 패턴 매칭된다.
+- 패턴 (x :: xs', y :: ys')는 내부적으로 Prod.mk (List.cons x xs') (List.cons y ys') 구조이다.
+- 이 패턴 매칭이 성공하면 Lean의 타입 검사 단계에서는 다음 관계가 성립한다.
+  - xs = x :: xs'
+  - ys = y :: ys'
+- 그러나 termination checker는 (xs, ys) 패턴에서 나온 xs'가 함수 인자 xs의 **직접적인 구조적 하위(subterm) 라는 관계를 자동으로 복원하지 못한다.**
+- 따라서 termination checker는 재귀 호출 sameLength xs' ys'가 원래 호출보다 작다는 것을 증명하지 못한다.
+- 결과적으로 Lean은 구조적 감소를 확인할 수 없다고 판단하여 termination error를 발생시킨다.
+
+
+```lean
+def sameLength2 (xs: List α) (ys: List β): Bool :=
+  match xs with
+  | [] =>
+    match ys with
+    | [] => true
+    | y::ys' => false
+  | x::xs' =>
+    match ys with
+    | [] => false
+    | y::ys' => sameLength2 xs' ys'
+
+#eval sameLength2 [1, 2, 3] ["a", "b", "c"] -- true
+```
+
+---
+
+귀납 타입(inductive type)에 대한 인자를 빠뜨리는 것도 혼란스러운 메시지
+
+```lean
+inductive MyType3 (α: Type) : Type where
+  | ctor : α -> MyType3 
+-- error
+-- MyType3 \alpha 로 적어야함
+```
+
+```
+type expected, got
+  (MyType : Type → Type)
+```
+
+타입 인자를 생략했을 때 나타날 수 있음
+```lean
+inductive MyType4 (α: Type) : Type where
+  | ctor : α -> MyType4 α
+
+def ofFive: MyType4 := MyType4.ctor 5 -- error
+
+def ofFive2 := MyType4.ctor 5 --ok
+def ofFive3 : MyType4 Nat := MyType4.ctor 5 --ok
+```
+
+---
+
+inductive 타입에 대해서 종종 #eval 명령이 Repr, ToString 이 없어서 작동하지 않을때 있음
+
+(대부분 자동으로 display 해주지만)
+
+```lean
+inductive WoodSplittingTool where
+  | axe
+  | maul
+  | froe
+
+#eval WoodSplittingTool.axe
+
+def allTools : List WoodSplittingTool := [
+  WoodSplittingTool.axe,
+  WoodSplittingTool.maul,
+  WoodSplittingTool.froe
+]
+
+#eval allTools -- error
+```
+
+
+#eval 시점에 즉석에서 생성하는 대신 Lean에게 표시 코드를 미리 생성하도록 지시함으로써 해결
+
+```lean
+inductive WoodSplittingTool2 where
+  | axe
+  | maul
+  | froe
+deriving Repr
+
+def allTools2 := [
+  WoodSplittingTool2.axe,
+  WoodSplittingTool2.maul,
+  WoodSplittingTool2.froe
+]
+
+#eval allTools2
+```
+
+deriving 문법은 Haskell 과 비슷
+
+```haskell
+data Firewood
+  = Birch
+  | Pine
+  | Beech
+  deriving (Show)
+```
+
+- Lean deriving은 compile-time metaprogramming
+- deriving을 쓰면 해당 타입클래스의 instance가 자동으로 생성
+- lean 소스코드가 생성되지는 않고 AST 수준의 표현이 생성되어 컴파일러가 직접 처리
+
+
+### 1.6.5 Exercises 연습문제
+
+Write a function to find the last entry in a list. It should return an Option.
+
+```lean
+def last {α: Type} (xs: List α): Option α :=
+   match xs with
+   | [] => Option.none
+   | [x] => Option.some x
+   | _::xs' => last xs'
+```
+
+Write a function that finds the first entry in a list that satisfies a given predicate. Start the definition with def List.findFirst? {α : Type} (xs : List α) (predicate : α → Bool) : Option α := ….
+
+```lean
+def List.findFirst {α: Type} (xs: List α) (predicate: α -> Bool) : Option α :=
+  match xs with
+  | [] => Option.none
+  | x::xs' => if predicate x then Option.some x else List.findFirst xs' predicate
+```
+
+Write a function Prod.switch that switches the two fields in a pair for each other. Start the definition with def Prod.switch {α β : Type} (pair : α × β) : β × α := ….
+
+```lean
+def Prod.switch {α: Type} {β: Type} (pair: α × β): β × α :=
+  match pair with
+  | (a, b) => (b, a)
+```
+
+Rewrite the PetName example to use a custom datatype and compare it to the version that uses Sum.
+
+```lean
+inductive PetNameInductive
+  | dog (name: String): PetNameInductive
+  | cat: String -> PetNameInductive
+
+#eval PetNameInductive.dog "hi"
+#eval PetNameInductive.cat "nyooo"
+```
+
+Write a function zip that combines two lists into a list of pairs. The resulting list should be as long as the shortest input list. Start the definition with def zip {α β : Type} (xs : List α) (ys : List β) : List (α × β) := ….
+
+```lean
+def zip {α: Type} {β: Type} (xs: List α) (ys: List β) : List (α × β) :=
+  match xs with
+  | [] => []
+  | x::xs' =>
+    match ys with
+    | [] => []
+    | y::ys' => (x, y)::(zip xs' ys')
+```
+
+Write a polymorphic function take that returns the first n entries in a list, where n is a Nat. If the list contains fewer than n entries, then the resulting list should be the entire input list. #eval take 3 ["bolete", "oyster"] should yield ["bolete", "oyster"], and #eval take 1 ["bolete", "oyster"] should yield ["bolete"].
+
+```lean
+def take {α: Type} (n: Nat) (xs: List α) : List α :=
+  if n == 0
+  then []
+  else
+    match xs with
+    | [] => []
+    | x::xs' => x::(take (n - 1) xs')
+```
+
+Using the analogy between types and arithmetic, write a function that distributes products over sums. In other words, it should have type α × (β ⊕ γ) → (α × β) ⊕ (α × γ).
+
+```lean
+def distributeProductsOverSums (p: α × (β ⊕ γ)) : (α × β) ⊕ (α × γ) :=
+  match p with
+  | (a, Sum.inl left) => Sum.inl (a, left)
+  | (a, Sum.inr right) => Sum.inr (a, right)
+```
+
+Using the analogy between types and arithmetic, write a function that turns multiplication by two into a sum. In other words, it should have type Bool × α → α ⊕ α.
+
+```lean
+def multiplicationByTwoIntoSum (p: Bool × α) : α ⊕ α :=
+  match p with
+  | (true, a) => Sum.inl a
+  | (false, a) => Sum.inr a
+```

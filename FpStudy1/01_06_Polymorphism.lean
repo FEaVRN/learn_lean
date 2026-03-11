@@ -178,4 +178,148 @@ inductive MyEmpty where
 
 -- ### 1.6.4 Messages You May Meet
 
--- TODO
+inductive MyType: Type where
+  | ctor: (α: Type) -> α -> MyType
+
+inductive MyType (α: Type) where
+  | ctor: (a: α) -> MyType α
+
+inductive MyType2 : Type where
+  | ctor : (MyType2 -> Int) -> MyType2
+
+
+-- {α: Type} {β: Type} 안써도 알아서 컴파일러가 implicit argument로 인식해서 처리해줌
+def sameLength (xs: List α) (ys: List β): Bool :=
+  match (xs, ys) with
+  | ([], []) => true
+  | (x::xs', y::ys') => sameLength xs' ys'
+  | _ => false
+
+def sameLength2 (xs: List α) (ys: List β): Bool :=
+  match xs with
+  | [] =>
+    match ys with
+    | [] => true
+    | y::ys' => false
+  | x::xs' =>
+    match ys with
+    | [] => false
+    | y::ys' => sameLength2 xs' ys'
+
+#check sameLength2
+#eval sameLength2 [1, 2, 3] ["a", "b", "c"]
+
+
+#check List.head ([]: List Nat)
+
+
+inductive MyType3 (α: Type) : Type where
+  | ctor : α -> MyType3
+
+
+inductive MyType4 (α: Type) : Type where
+  | ctor : α -> MyType4 α
+
+def ofFive: MyType4 := MyType4.ctor 5
+
+def ofFive2 := MyType4.ctor 5 --ok
+def ofFive3 : MyType4 Nat := MyType4.ctor 5 --ok
+
+
+inductive WoodSplittingTool where
+  | axe
+  | maul
+  | froe
+
+#eval WoodSplittingTool.axe
+
+def allTools : List WoodSplittingTool := [
+  WoodSplittingTool.axe,
+  WoodSplittingTool.maul,
+  WoodSplittingTool.froe
+]
+
+#eval allTools
+
+inductive WoodSplittingTool2 where
+  | axe
+  | maul
+  | froe
+deriving Repr
+
+def allTools2 := [
+  WoodSplittingTool2.axe,
+  WoodSplittingTool2.maul,
+  WoodSplittingTool2.froe
+]
+
+#eval allTools2
+
+-- ### 1.6.5 Exercises
+
+def last {α: Type} (xs: List α): Option α :=
+   match xs with
+   | [] => Option.none
+   | x::[] => Option.some x
+   | _::xs' => last xs'
+
+#eval last [1, 2, 3] -- Option.some 3
+#eval last ([] : List Nat) -- Option.none
+
+def List.findFirst? {α: Type} (xs: List α) (predicate: α -> Bool) : Option α :=
+  match xs with
+  | [] => Option.none
+  | x::xs' => if predicate x then Option.some x else List.findFirst? xs' predicate
+
+#eval List.findFirst? [1, 2, 3, 4] (fun x => x % 2 == 0) -- Option.some 2
+#eval List.findFirst? [1, 3, 5] (fun x => x % 2 == 0) -- Option.none
+
+def Prod.switch {α: Type} {β: Type} (pair: α × β): β × α :=
+  match pair with
+  | (a, b) => (b, a)
+
+inductive PetNameInductive
+  | dog (name: String): PetNameInductive
+  | cat: String -> PetNameInductive
+
+#eval PetNameInductive.dog "hi"
+#eval PetNameInductive.cat "nyooo"
+
+def zip {α: Type} {β: Type} (xs: List α) (ys: List β) : List (α × β) :=
+  match xs with
+  | [] => []
+  | x::xs' =>
+    match ys with
+    | [] => []
+    | y::ys' => (x, y)::(zip xs' ys')
+
+#eval zip [1, 2, 3] ["a", "b", "c"] -- [(1, "a"), (2, "b"), (3, "c")]
+#eval zip [1, 2] ["a", "b", "c"] --
+
+def take {α: Type} (n: Nat) (xs: List α) : List α :=
+  if n == 0
+  then []
+  else
+    match xs with
+    | [] => []
+    | x::xs' => x::(take (n - 1) xs')
+
+#eval take 3 ["bolete", "oyster"]
+#eval take 1 ["bolete", "oyster"]
+
+
+def distributeProductsOverSums (p: α × (β ⊕ γ)) : (α × β) ⊕ (α × γ) :=
+  match p with
+  | (a, Sum.inl left) => Sum.inl (a, left)
+  | (a, Sum.inr right) => Sum.inr (a, right)
+
+#eval distributeProductsOverSums (4, (Sum.inl "hello" : Sum String Int)) -- Sum.inl (4, "hello")
+#eval distributeProductsOverSums (4, (Sum.inr true : Sum String Bool)) -- Sum.inr
+
+def multiplicationByTwoIntoSum (p: Bool × α) : α ⊕ α :=
+  match p with
+  | (true, a) => Sum.inl a
+  | (false, a) => Sum.inr a
+
+#eval multiplicationByTwoIntoSum (true, 5) -- Sum.inl 5
+#eval multiplicationByTwoIntoSum (false, "hello") -- Sum.inr "hello
